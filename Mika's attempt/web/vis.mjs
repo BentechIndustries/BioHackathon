@@ -188,6 +188,26 @@ function createVisualiser(uniqueId, div) {
         dragging = false;
     });
 
+    const mixButton = div.querySelector(".mix-button");
+    const doneButton = div.querySelector(".done-button");
+    let controlUrl = "";
+
+    function sendControl(action) {
+        if (!controlUrl) {
+            return;
+        }
+        fetch(`${controlUrl}/${action}`, { method: "POST" }).catch(() => {});
+    }
+
+    if (mixButton) {
+        mixButton.disabled = true;
+        mixButton.addEventListener("click", () => sendControl("mix"));
+    }
+    if (doneButton) {
+        doneButton.disabled = true;
+        doneButton.addEventListener("click", () => sendControl("done"));
+    }
+
     function reset() {
         activity.fill(0);
         pulses.fill(0);
@@ -245,6 +265,16 @@ function createVisualiser(uniqueId, div) {
         loudest = packet.loudest || "";
         turns = packet.turns || 0;
         solved = Boolean(packet.solved);
+        if (packet.control_url) {
+            controlUrl = packet.control_url;
+        }
+        const mixing = packet.controls === "mix" && Boolean(controlUrl);
+        if (mixButton) {
+            mixButton.disabled = !mixing;
+        }
+        if (doneButton) {
+            doneButton.disabled = !mixing;
+        }
     }
 
     function startNext(now) {

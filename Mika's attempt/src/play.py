@@ -1,12 +1,12 @@
+import queue
 import random
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import cl
 from cl import ChannelSet, StimDesign
 
 from .cube import Cube, move_name
-
-def visible_mix_seconds(scramble_turns):
-    return scramble_turns + 1
 
 TICKS_PER_SECOND = 10
 TICKS_PER_BEAT = 10
@@ -50,19 +50,64 @@ def plain_turn(move):
     return f"{face}, clockwise"
 
 
-def play(duration_s, scramble_turns, seed=None):
+def _start_controls(commands):
+    class Handler(BaseHTTPRequestHandler):
+        def do_OPTIONS(self):
+            self._send(204)
+
+        def do_POST(self):
+            action = self.path.strip("/")
+            if action in ("mix", "done"):
+                commands.put(action)
+            self._send(204)
+
+        def _send(self, code):
+            self.send_response(code)
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
+            self.send_header("Access-Control-Allow-Headers", "*")
+            self.end_headers()
+
+        def log_message(self, fmt, *args):
+            return
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    return server, f"http://127.0.0.1:{server.server_address[1]}"
+
+
+def _take_commands(commands):
+    found = []
+    while True:
+        try:
+            found.append(commands.get_nowait())
+        except queue.Empty:
+            return found
+
+
+def play(duration_s, seed=None, commands=None):
     rng = random.Random(seed)
     cube = Cube()
     scramble = []
     last_face = None
-    for _ in range(scramble_turns):
-        choices = [move for move in range(12) if move // 2 != last_face]
-        move = rng.choice(choices)
-        scramble.append(move)
-        last_face = move // 2
     accepted = []
-    mix_beats = 1 + len(scramble)
     listen_ticks = int(duration_s * TICKS_PER_SECOND)
+    own_server = None
+    if commands is None:
+        commands = queue.Queue()
+        own_server, control_url = _start_controls(commands)
+    else:
+        control_url = ""
+    try:
+        return _play(duration_s, rng, cube, scramble, last_face, accepted, listen_ticks, commands, control_url)
+    finally:
+        if own_server is not None:
+            own_server.shutdown()
+
+
+def _play(duration_s, rng, cube, scramble, last_face, accepted, listen_ticks, commands, control_url):
+    controls = "mix"
     with cl.open() as neurons:
         stream = neurons.create_data_stream("cube")
         stamp = -1
@@ -85,40 +130,57 @@ def play(duration_s, scramble_turns, seed=None):
                     "loudest": loudest,
                     "solved": label == "The cube is solved",
                     "turns": len(accepted),
+                    "control_url": control_url,
+                    "controls": controls,
                 },
             )
 
         mixed = None
         remaining = []
-        next_mix_tick = TICKS_PER_BEAT
-        mixes_sent = 0
         solving = False
+        solve_from = None
         hold_until = -1
-        last_detail = "Starting from solved."
+        last_detail = "The cube is solved."
+        announced = False
         for tick in neurons.loop(
             ticks_per_second=TICKS_PER_SECOND,
-            stop_after_ticks=mix_beats * TICKS_PER_BEAT + listen_ticks,
+            stop_after_seconds=duration_s + 900,
             ignore_jitter=True,
         ):
             when = tick.iteration_next_timestamp
             if not solving:
-                if tick.iteration < next_mix_tick:
-                    if tick.iteration == 0:
-                        publish(when, "", "Solved cube", "The computer will mix it next.", "Drag the cube to look around.", "", "")
-                    else:
-                        publish(when, "", "Computer is mixing", last_detail, "This turn is the computer, not the dish.", "", "")
+                if not announced:
+                    publish(when, "", "Press Mix", "Each click turns one face.", "Then press Done mixing.", "", "")
+                    announced = True
+                for action in _take_commands(commands):
+                    if action == "mix":
+                        choices = [move for move in range(12) if move // 2 != last_face]
+                        move = rng.choice(choices)
+                        cube.apply(move)
+                        scramble.append(move)
+                        last_face = move // 2
+                        last_detail = plain_turn(move)
+                        publish(when, move_name(move), "You mixed it", last_detail, "Mix again, or press Done mixing.", "", "")
+                    elif action == "done":
+                        if cube.solved():
+                            if scramble:
+                                publish(when, "", "The cube is solved", "The mix came back to solved.", "Press Mix if you want to mix again.", "", "")
+                                scramble.clear()
+                                last_face = None
+                            else:
+                                publish(when, "", "Press Mix", "The cube is still solved.", "Turn it at least once, then press Done mixing.", "", "")
+                        else:
+                            mixed = cube.net()
+                            remaining = cube.solution()
+                            solving = True
+                            solve_from = tick.iteration
+                            controls = "off"
+                            break
+                if not solving:
                     continue
-                if mixes_sent < len(scramble):
-                    move = scramble[mixes_sent]
-                    cube.apply(move)
-                    mixes_sent += 1
-                    next_mix_tick = tick.iteration + TICKS_PER_BEAT
-                    last_detail = plain_turn(move)
-                    publish(when, move_name(move), "Computer is mixing", last_detail, "This turn is the computer, not the dish.", "", "")
-                    continue
-                mixed = cube.net()
-                remaining = cube.solution()
-                solving = True
+            if solve_from is not None and tick.iteration - solve_from >= listen_ticks:
+                tick.loop.stop()
+                break
             if not remaining:
                 publish(when, "", "The cube is solved", "Every face is one color.", f"Turns from the dish: {len(accepted)}.", "", "")
                 tick.loop.stop()
@@ -169,7 +231,7 @@ def play(duration_s, scramble_turns, seed=None):
         [
             outcome,
             "",
-            "Computer mix:",
+            "Your mix:",
             ", ".join(plain_turn(move) for move in scramble),
             "",
             "Mixed cube:",
