@@ -5,7 +5,11 @@ from cl import ChannelSet, StimDesign
 
 from .cube import Cube, move_name, sequence_text
 
+def visible_mix_seconds(scramble_turns):
+    return scramble_turns + 1
+
 TICKS_PER_SECOND = 10
+TICKS_PER_BEAT = 10
 MOVE_CHANNELS = (
     (8, 9, 10, 11),
     (12, 13, 14, 15),
@@ -39,13 +43,18 @@ def play(duration_s, scramble_turns, seed=None):
         scramble.append(move)
         last_face = move // 2
     accepted = []
+    mix_beats = 1 + len(scramble)
+    listen_ticks = int(duration_s * TICKS_PER_SECOND)
     with cl.open() as neurons:
         stream = neurons.create_data_stream("cube")
-        stamp = neurons.timestamp()
+        stamp = -1
 
-        def publish(move_label, phase):
+        def publish(when, move_label, phase):
             nonlocal stamp
-            stamp += 1
+            when = int(when)
+            if when <= stamp:
+                when = stamp + 1
+            stamp = when
             stream.append(
                 stamp,
                 {
@@ -57,18 +66,31 @@ def play(duration_s, scramble_turns, seed=None):
                 },
             )
 
-        publish("", "Ready")
-        for index, move in enumerate(scramble):
-            cube.apply(move)
-            phase = "Solving" if index == len(scramble) - 1 else "Mixing"
-            publish(move_name(move), phase)
-        mixed = cube.net()
-        remaining = cube.solution()
+        mixed = None
+        remaining = []
+        next_mix_tick = TICKS_PER_BEAT
+        mixes_sent = 0
+        solving = False
         for tick in neurons.loop(
             ticks_per_second=TICKS_PER_SECOND,
-            stop_after_seconds=duration_s,
+            stop_after_ticks=mix_beats * TICKS_PER_BEAT + listen_ticks,
             ignore_jitter=True,
         ):
+            if tick.iteration == 0:
+                publish(tick.iteration_next_timestamp, "", "Ready")
+            if not solving:
+                if tick.iteration < next_mix_tick:
+                    continue
+                if mixes_sent < len(scramble):
+                    move = scramble[mixes_sent]
+                    cube.apply(move)
+                    mixes_sent += 1
+                    next_mix_tick = tick.iteration + TICKS_PER_BEAT
+                    publish(tick.iteration_next_timestamp, move_name(move), "Mixing")
+                    continue
+                mixed = cube.net()
+                remaining = cube.solution()
+                solving = True
             if not remaining:
                 tick.loop.stop()
                 break
@@ -88,11 +110,13 @@ def play(duration_s, scramble_turns, seed=None):
             accepted.append(chosen)
             remaining = remaining[1:]
             phase = "Solved" if not remaining else "Solving"
-            publish(move_name(chosen), phase)
+            publish(tick.iteration_next_timestamp, move_name(chosen), phase)
             neurons.stim(ChannelSet(*MOVE_CHANNELS[chosen]), _REWARD)
             if not remaining:
                 tick.loop.stop()
                 break
+        if mixed is None:
+            mixed = cube.net()
     solved = cube.solved()
     outcome = "Solved." if solved else "Time ran out before it was solved."
     text = "\n".join(

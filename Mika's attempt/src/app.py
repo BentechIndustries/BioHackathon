@@ -4,7 +4,7 @@ from cl.app import BaseApplication, BaseApplicationConfig, OutputType, RunSummar
 from cl.app.model import DurationSeconds
 from pydantic import Field
 
-from .play import play
+from .play import play, visible_mix_seconds
 
 
 class MyApplicationConfig(BaseApplicationConfig):
@@ -29,7 +29,7 @@ class MyApplicationConfig(BaseApplicationConfig):
 
     @override
     def estimate_duration_s(self) -> float:
-        return self.duration
+        return self.duration + visible_mix_seconds(self.scramble_turns)
 
 
 class MyApplication(BaseApplication[MyApplicationConfig]):
