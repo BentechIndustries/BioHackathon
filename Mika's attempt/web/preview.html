@@ -30,9 +30,25 @@
         host.innerHTML = await (await fetch("./vis.html")).text();
         const visual = createVisualiser("preview", host);
         const packets = await (await fetch("./preview-sequence.json")).json();
-        const hold = Number(new URLSearchParams(location.search).get("hold") || packets.length);
+        const params = new URLSearchParams(location.search);
+        const hold = Number(params.get("hold") || packets.length);
         for (const packet of packets.slice(0, hold)) {
             visual.process("cube", 0, packet);
+        }
+        if (params.get("demo") === "1") {
+            visual.process("cube", 1, {
+                facelets: packets[0].facelets,
+                move: "",
+                label: "Waiting for the dish",
+                detail: "Next turn: top face, clockwise.",
+                note: "Loudest is right face, counterclockwise. That is not the next turn.",
+                needed: "U",
+                loudest: "R'",
+                turns: 0,
+                solved: false,
+            });
+            visual.process("cl_spikes", 2, { channel: 20 });
+            visual.process("cl_stims", 3, { channel: 8 });
         }
         let frame = 0;
         function tick(now) {

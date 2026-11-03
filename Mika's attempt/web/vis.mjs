@@ -149,7 +149,10 @@ function createVisualiser(uniqueId, div) {
     const queue = [];
     let shown = solvedFacelets();
     let label = "Waiting";
-    let lastMove = "";
+    let detail = "";
+    let note = "Drag the cube to look around.";
+    let needed = "";
+    let loudest = "";
     let turns = 0;
     let solved = false;
     let anim = null;
@@ -191,7 +194,10 @@ function createVisualiser(uniqueId, div) {
         queue.length = 0;
         shown = solvedFacelets();
         label = "Waiting";
-        lastMove = "";
+        detail = "";
+        note = "Drag the cube to look around.";
+        needed = "";
+        loudest = "";
         turns = 0;
         solved = false;
         anim = null;
@@ -213,13 +219,32 @@ function createVisualiser(uniqueId, div) {
         if (dataStreamName !== "cube" || !data || !data.facelets) {
             return;
         }
-        queue.push({
+        const packet = {
             facelets: Array.from(data.facelets),
             move: data.move || "",
             label: data.label || "",
+            detail: data.detail || "",
+            note: data.note || "",
+            needed: data.needed || "",
+            loudest: data.loudest || "",
             turns: data.turns || 0,
             solved: Boolean(data.solved),
-        });
+        };
+        readStatus(packet);
+        if (!packet.move) {
+            return;
+        }
+        queue.push(packet);
+    }
+
+    function readStatus(packet) {
+        label = packet.label || label;
+        detail = packet.detail || "";
+        note = packet.note || "";
+        needed = packet.needed || "";
+        loudest = packet.loudest || "";
+        turns = packet.turns || 0;
+        solved = Boolean(packet.solved);
     }
 
     function startNext(now) {
@@ -227,10 +252,7 @@ function createVisualiser(uniqueId, div) {
         const turn = TURNS[packet.move];
         if (!packet.move || !turn) {
             shown = packet.facelets;
-            label = packet.label;
-            lastMove = packet.move;
-            turns = packet.turns;
-            solved = packet.solved;
+            readStatus(packet);
             return;
         }
         anim = {
@@ -238,12 +260,9 @@ function createVisualiser(uniqueId, div) {
             to: packet.facelets,
             move: packet.move,
             turn,
-            label: packet.label,
-            turns: packet.turns,
-            solved: packet.solved,
             start: now,
         };
-        lastMove = packet.move;
+        readStatus(packet);
     }
 
     function draw(browserTimestampMs) {
@@ -263,12 +282,8 @@ function createVisualiser(uniqueId, div) {
             angle = anim.turn.angle * eased * Math.PI / 180;
             turn = anim.turn;
             facelets = anim.from;
-            label = anim.label;
             if (t >= 1) {
                 shown = anim.to;
-                label = anim.label;
-                turns = anim.turns;
-                solved = anim.solved;
                 anim = null;
                 facelets = shown;
                 angle = 0;
@@ -297,8 +312,8 @@ function createVisualiser(uniqueId, div) {
         context.fillStyle = gradient;
         context.fillRect(0, 0, width, height);
 
-        const cubeScale = Math.min(width, height) * 0.25;
-        const originX = width * 0.27;
+        const cubeScale = Math.min(width, height) * 0.2;
+        const originX = width * 0.22;
         const originY = height * 0.48;
         const drawn = [];
         for (let index = 0; index < 24; index += 1) {
@@ -316,21 +331,25 @@ function createVisualiser(uniqueId, div) {
             fillPoly(face.corners, originX, originY, cubeScale, COLORS[face.color]);
         }
 
+        const textX = width * 0.48;
+        const textMax = width * 0.46;
+        context.textAlign = "left";
+        context.textBaseline = "alphabetic";
         context.fillStyle = "#f4f7fb";
-        context.font = `700 ${Math.round(width * 0.034)}px sans-serif`;
-        context.fillText(label || "Waiting", width * 0.56, height * 0.1);
-        context.fillStyle = solved ? "#7dffb3" : "#9eb0c9";
-        context.font = `600 ${Math.round(width * 0.02)}px sans-serif`;
-        const moveLine = lastMove ? `Turn ${lastMove}` : "Turn";
-        context.fillText(moveLine, width * 0.56, height * 0.16);
-        context.fillText(`Turns made ${turns}`, width * 0.56, height * 0.21);
+        context.font = `700 ${Math.round(width * 0.028)}px sans-serif`;
+        let textY = wrapText(label || "Waiting", textX, height * 0.08, textMax, width * 0.034);
+        context.fillStyle = solved ? "#7dffb3" : "#d5deea";
+        context.font = `600 ${Math.round(width * 0.016)}px sans-serif`;
+        textY = wrapText(detail, textX, textY, textMax, width * 0.022);
+        context.fillStyle = "#9eb0c9";
+        context.font = `500 ${Math.round(width * 0.015)}px sans-serif`;
+        textY = wrapText(note, textX, textY, textMax, width * 0.02);
         context.fillStyle = "#7f8da3";
-        context.font = `500 ${Math.round(width * 0.016)}px sans-serif`;
-        context.fillText("Drag the cube to look around", width * 0.56, height * 0.26);
+        textY = wrapText("Drag the cube to look around.", textX, textY + width * 0.008, textMax, width * 0.02);
 
-        const cell = Math.min(width, height) * 0.028;
-        const netX = width * 0.56;
-        const netY = height * 0.3;
+        const cell = Math.min(width * 0.018, (height - textY) * 0.045, height * 0.022);
+        const netX = textX;
+        const netY = textY + cell * 0.4;
         const gap = cell * 0.18;
         for (const [facelet, col, row] of NET) {
             const x = netX + col * (cell + gap);
@@ -338,14 +357,20 @@ function createVisualiser(uniqueId, div) {
             roundRect(x, y, cell, cell, cell * 0.18, COLORS[facelets[facelet]]);
         }
 
-        const dishCell = Math.min(width, height) * 0.046;
-        const dishX = width * 0.56;
-        const dishY = height * 0.56;
-        context.fillStyle = "#9eb0c9";
-        context.font = `600 ${Math.round(width * 0.018)}px sans-serif`;
-        context.textAlign = "left";
-        context.textBaseline = "alphabetic";
-        context.fillText("Dish", dishX, dishY - dishCell * 0.35);
+        const legendY = netY + 6 * (cell + gap) + cell * 0.9;
+        context.font = `600 ${Math.round(width * 0.015)}px sans-serif`;
+        context.fillStyle = "#f4f7fb";
+        context.fillText("Dish", textX, legendY);
+        context.font = `500 ${Math.round(width * 0.013)}px sans-serif`;
+        legendDot(textX, legendY + width * 0.022, "#7dffb3", "Green: the dish is active there");
+        legendDot(textX, legendY + width * 0.042, "#5adcff", "Blue: reward after a correct turn");
+        context.fillStyle = "#d5deea";
+        context.fillText("White ring: the spots for the next turn", textX, legendY + width * 0.064);
+        context.fillText("Orange ring: loudest group, wrong turn", textX, legendY + width * 0.082);
+
+        const dishX = textX;
+        const dishY = legendY + width * 0.096;
+        const dishCell = Math.max(7, Math.min(width * 0.026, (height - dishY - 6) / 8));
         const hidden = new Set([0, 4, 7, 56, 63]);
         for (let row = 0; row < 8; row += 1) {
             for (let col = 0; col < 8; col += 1) {
@@ -372,11 +397,61 @@ function createVisualiser(uniqueId, div) {
                     context.fillStyle = "#1a2233";
                 }
                 context.fill();
+                const ring = ringColor(channel);
+                if (ring) {
+                    context.beginPath();
+                    context.arc(cx, cy, radius + 1.5, 0, Math.PI * 2);
+                    context.strokeStyle = ring;
+                    context.lineWidth = 1.5;
+                    context.stroke();
+                }
             }
         }
+    }
 
-        context.textAlign = "left";
-        context.textBaseline = "alphabetic";
+    function ringColor(channel) {
+        const move = CHANNEL_MOVE[channel];
+        if (move < 0) {
+            return "";
+        }
+        const code = ["U", "U'", "R", "R'", "F", "F'", "D", "D'", "L", "L'", "B", "B'"][move];
+        if (code && code === needed) {
+            return "#f4f7fb";
+        }
+        if (code && code === loudest) {
+            return "#ffb020";
+        }
+        return "";
+    }
+
+    function legendDot(x, y, color, text) {
+        context.beginPath();
+        context.arc(x + 5, y - 3, 4, 0, Math.PI * 2);
+        context.fillStyle = color;
+        context.fill();
+        context.fillStyle = "#d5deea";
+        context.fillText(text, x + 14, y);
+    }
+
+    function wrapText(text, x, y, maxWidth, lineHeight) {
+        if (!text) {
+            return y;
+        }
+        const words = String(text).split(" ");
+        let line = "";
+        let cursor = y;
+        for (const word of words) {
+            const next = line ? `${line} ${word}` : word;
+            if (line && context.measureText(next).width > maxWidth) {
+                context.fillText(line, x, cursor);
+                line = word;
+                cursor += lineHeight;
+            } else {
+                line = next;
+            }
+        }
+        context.fillText(line, x, cursor);
+        return cursor + lineHeight;
     }
 
     function fillPoly(points, originX, originY, scale, color) {
