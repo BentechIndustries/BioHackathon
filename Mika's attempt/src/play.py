@@ -10,26 +10,25 @@ from .cube import Cube, move_name
 
 TICKS_PER_SECOND = 10
 TICKS_PER_BEAT = 10
-MOVE_CHANNELS = (
-    (8, 9, 10, 11),
-    (12, 13, 14, 15),
-    (16, 17, 18, 19),
-    (20, 21, 22, 23),
-    (24, 25, 26, 27),
-    (28, 29, 30, 31),
-    (32, 33, 34, 35),
-    (36, 37, 38, 39),
-    (40, 41, 42, 43),
-    (44, 45, 46, 47),
-    (48, 49, 50, 51),
-    (52, 53, 54, 55),
-)
+MIX_TURNS = 6
+SENSE_CHANNELS = tuple(range(8, 32))
+MOVE_CHANNELS = tuple((32 + 2 * move, 33 + 2 * move) for move in range(12))
 _CHANNEL_MOVE = {}
 for _move, _channels in enumerate(MOVE_CHANNELS):
     for _channel in _channels:
         _CHANNEL_MOVE[_channel] = _move
 
 _REWARD = StimDesign(160, -1.0, 160, 1.0)
+
+
+def _color_stim(color):
+    level = 0.35 + 0.1 * color
+    return StimDesign(160, -level, 160, level)
+
+
+def _show_colors(neurons, cube):
+    for channel, color in zip(SENSE_CHANNELS, cube.facelets):
+        neurons.stim(ChannelSet(channel), _color_stim(color))
 _FACE_WORDS = {
     "U": "top face",
     "D": "bottom face",
@@ -57,7 +56,7 @@ def _start_controls(commands):
 
         def do_POST(self):
             action = self.path.strip("/")
-            if action in ("mix", "done"):
+            if action in ("mix", "solve", "done"):
                 commands.put(action)
             self._send(204)
 
@@ -107,7 +106,7 @@ def play(duration_s, seed=None, commands=None):
 
 
 def _play(duration_s, rng, cube, scramble, last_face, accepted, listen_ticks, commands, control_url):
-    controls = "mix"
+    controls = "ready"
     with cl.open() as neurons:
         stream = neurons.create_data_stream("cube")
         stamp = -1
@@ -142,6 +141,11 @@ def _play(duration_s, rng, cube, scramble, last_face, accepted, listen_ticks, co
         hold_until = -1
         last_detail = "The cube is solved."
         announced = False
+        pending_mix = []
+        next_mix_tick = 0
+        solve_requested = False
+        awaiting_mixed_banner = False
+        mixed_shown = False
         for tick in neurons.loop(
             ticks_per_second=TICKS_PER_SECOND,
             stop_after_seconds=duration_s + 900,
@@ -150,79 +154,88 @@ def _play(duration_s, rng, cube, scramble, last_face, accepted, listen_ticks, co
             when = tick.iteration_next_timestamp
             if not solving:
                 if not announced:
-                    publish(when, "", "Press Mix", "Each click turns one face.", "Then press Done mixing.", "", "")
+                    publish(when, "", "Press Mix", "One click mixes the cube.", "It stops on its own. Then press Solve when you want it to go.", "", "")
                     announced = True
                 for action in _take_commands(commands):
-                    if action == "mix":
-                        choices = [move for move in range(12) if move // 2 != last_face]
-                        move = rng.choice(choices)
-                        cube.apply(move)
-                        scramble.append(move)
-                        last_face = move // 2
-                        last_detail = plain_turn(move)
-                        publish(when, move_name(move), "You mixed it", last_detail, "Mix again, or press Done mixing.", "", "")
-                    elif action == "done":
-                        if cube.solved():
-                            if scramble:
-                                publish(when, "", "The cube is solved", "The mix came back to solved.", "Press Mix if you want to mix again.", "", "")
-                                scramble.clear()
-                                last_face = None
-                            else:
-                                publish(when, "", "Press Mix", "The cube is still solved.", "Turn it at least once, then press Done mixing.", "", "")
-                        else:
-                            mixed = cube.net()
-                            remaining = cube.solution()
-                            solving = True
-                            solve_from = tick.iteration
-                            controls = "off"
-                            break
+                    if action == "mix" and not pending_mix and not awaiting_mixed_banner:
+                        mixed_shown = False
+                        controls = "scramble"
+                        for _ in range(MIX_TURNS):
+                            choices = [move for move in range(12) if move // 2 != last_face]
+                            move = rng.choice(choices)
+                            pending_mix.append(move)
+                            last_face = move // 2
+                    elif action in ("solve", "done"):
+                        solve_requested = True
+                if pending_mix and tick.iteration >= next_mix_tick:
+                    move = pending_mix.pop(0)
+                    cube.apply(move)
+                    scramble.append(move)
+                    last_detail = plain_turn(move)
+                    next_mix_tick = tick.iteration + TICKS_PER_BEAT
+                    if not pending_mix:
+                        awaiting_mixed_banner = True
+                    publish(when, move_name(move), "Mixing", last_detail, "It will stop on its own.", "", "")
+                    continue
+                if awaiting_mixed_banner and tick.iteration >= next_mix_tick:
+                    controls = "ready"
+                    awaiting_mixed_banner = False
+                    mixed_shown = True
+                    publish(when, "", "Mixed", "The mix has stopped.", "Press Solve to show the colors to the dish.", "", "")
+                    continue
+                if solve_requested and mixed_shown and not pending_mix:
+                    solve_requested = False
+                    if cube.solved():
+                        publish(when, "", "Press Mix", "The cube is still solved.", "Mix it, then press Solve when you want it to go.", "", "")
+                    else:
+                        mixed = cube.net()
+                        solving = True
+                        solve_from = tick.iteration
+                        controls = "off"
+                        choice_counts = [0] * 12
                 if not solving:
                     continue
             if solve_from is not None and tick.iteration - solve_from >= listen_ticks:
                 tick.loop.stop()
                 break
-            if not remaining:
+            if cube.solved():
                 publish(when, "", "The cube is solved", "Every face is one color.", f"Turns from the dish: {len(accepted)}.", "", "")
                 tick.loop.stop()
                 break
-            if tick.iteration < hold_until:
-                needed_code = move_name(remaining[0])
-                publish(when, "", "The dish turned it", last_detail, "Blue spots are the reward.", needed_code, needed_code)
-                continue
-            counts = [0] * 12
+            beat_index = tick.iteration - solve_from
+            if beat_index % TICKS_PER_BEAT == 0:
+                _show_colors(neurons, cube)
+                choice_counts = [0] * 12
             for spike in tick.analysis.spikes:
                 move = _CHANNEL_MOVE.get(spike.channel)
                 if move is not None:
-                    counts[move] += 1
-            top = max(counts)
-            winners = [move for move, count in enumerate(counts) if count == top and count > 0]
-            needed = remaining[0]
-            needed_code = move_name(needed)
-            loudest = winners[0] if len(winners) == 1 else None
-            if loudest == needed:
-                cube.apply(needed)
-                accepted.append(needed)
-                remaining = remaining[1:]
-                last_detail = plain_turn(needed)
-                if not remaining:
-                    publish(when, needed_code, "The cube is solved", last_detail, "The dish made the last turn.", "", "")
-                    neurons.stim(ChannelSet(*MOVE_CHANNELS[needed]), _REWARD)
-                    tick.loop.stop()
-                    break
-                publish(when, needed_code, "The dish turned it", last_detail, "Blue spots are the reward.", move_name(remaining[0]), needed_code)
-                neurons.stim(ChannelSet(*MOVE_CHANNELS[needed]), _REWARD)
-                hold_until = tick.iteration + TICKS_PER_BEAT
+                    choice_counts[move] += 1
+            if beat_index % TICKS_PER_BEAT != TICKS_PER_BEAT - 1:
+                top = max(choice_counts)
+                leaders = [move for move, count in enumerate(choice_counts) if count == top and count > 0]
+                leader = move_name(leaders[0]) if len(leaders) == 1 else ""
+                publish(when, "", "The dish is solving", "The colors are on the dish.", "The dish picks the turn.", leader, "")
                 continue
-            if loudest is None and top > 0:
-                note = "Several groups are tied, so no turn is taken."
-                loud_code = ""
-            elif loudest is None:
-                note = "The dish is quiet, so the cube stays still."
-                loud_code = ""
-            else:
-                note = f"Loudest is {plain_turn(loudest)}. That is not the next turn."
-                loud_code = move_name(loudest)
-            publish(when, "", "Waiting for the dish", f"Next turn: {plain_turn(needed)}.", note, needed_code, loud_code)
+            top = max(choice_counts)
+            winners = [move for move, count in enumerate(choice_counts) if count == top and count > 0]
+            if len(winners) != 1:
+                note = "Several turns are tied, so no turn is taken." if top > 0 else "The dish is quiet, so the cube stays still."
+                publish(when, "", "The dish is solving", "The colors are on the dish.", note, "", "")
+                continue
+            choice = winners[0]
+            before = len(cube.solution())
+            cube.apply(choice)
+            accepted.append(choice)
+            last_detail = plain_turn(choice)
+            helped = cube.solved() or len(cube.solution()) < before
+            if helped:
+                neurons.stim(ChannelSet(*MOVE_CHANNELS[choice]), _REWARD)
+            if cube.solved():
+                publish(when, move_name(choice), "The cube is solved", last_detail, "That turn helped.", "", "")
+                tick.loop.stop()
+                break
+            note = "That turn helped." if helped else "That turn did not help."
+            publish(when, move_name(choice), "The dish turned it", last_detail, note, "", "")
         if mixed is None:
             mixed = cube.net()
     solved = cube.solved()

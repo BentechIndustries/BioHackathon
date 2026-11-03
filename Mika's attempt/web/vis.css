@@ -1,19 +1,85 @@
 .cube-board {
-    width: min(960px, 100%);
+    width: min(1080px, 100%);
     margin: 0 auto;
+    padding: 16px 16px 14px;
+    box-sizing: border-box;
+    background: #121722;
+    color: #f4f1ea;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 28px;
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.28);
+    font-family: "Avenir Next", "Segoe UI", sans-serif;
+}
+
+.cube-kicker {
+    margin: 0;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: #8d98ab;
+}
+
+.cube-title {
+    margin: 4px 0 0;
+    font-size: 32px;
+    line-height: 1.05;
+    font-weight: 650;
+    letter-spacing: -0.035em;
+}
+
+.cube-title.is-solved {
+    color: #8ef0c0;
+}
+
+.cube-detail,
+.cube-note {
+    margin: 8px 0 0;
+    max-width: 40rem;
+}
+
+.cube-detail {
+    font-size: 18px;
+    line-height: 1.35;
+    color: #d7deea;
+}
+
+.cube-note {
+    font-size: 15px;
+    line-height: 1.4;
+    color: #8d98ab;
+}
+
+.cube-detail:empty,
+.cube-note:empty {
+    display: none;
+}
+
+.cube-stage {
+    display: grid;
+    grid-template-columns: minmax(0, 1.15fr) minmax(220px, 0.85fr);
+    gap: 12px;
+    margin-top: 14px;
+    align-items: stretch;
 }
 
 .cube-canvas-wrap {
-    aspect-ratio: 4 / 3;
-    background: #0c1020;
-    border-radius: 18px;
+    position: relative;
+    min-height: 340px;
+    background: radial-gradient(circle at 50% 42%, #222b3f 0%, #0d111a 70%);
+    border-radius: 22px;
     overflow: hidden;
 }
 
-.cube-canvas {
+.cube-canvas,
+.dish-canvas,
+.net-canvas {
     width: 100%;
     height: 100%;
     display: block;
+}
+
+.cube-canvas {
     cursor: grab;
     touch-action: none;
 }
@@ -22,32 +88,152 @@
     cursor: grabbing;
 }
 
+.cube-hint {
+    position: absolute;
+    left: 16px;
+    bottom: 14px;
+    margin: 0;
+    font-size: 12px;
+    letter-spacing: 0.04em;
+    color: rgba(244, 241, 234, 0.55);
+    pointer-events: none;
+}
+
+.cube-side {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-width: 0;
+}
+
+.dish-card,
+.net-card {
+    background: #0c1018;
+    border-radius: 22px;
+    padding: 16px;
+}
+
+.dish-card {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.side-label {
+    margin: 0 0 10px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: #8d98ab;
+}
+
+.dish-canvas {
+    height: 150px;
+}
+
+.net-canvas {
+    height: 84px;
+}
+
+.legend {
+    list-style: none;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px 12px;
+    margin: 12px 0 0;
+    padding: 0;
+    font-size: 13px;
+    color: #d7deea;
+}
+
+.legend li {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.swatch {
+    width: 10px;
+    height: 10px;
+    border-radius: 99px;
+    flex: none;
+}
+
+.swatch.green {
+    background: #7dffb3;
+}
+
+.swatch.blue {
+    background: #5adcff;
+}
+
+.swatch.ring-white,
+.swatch.ring-orange {
+    background: transparent;
+    box-sizing: border-box;
+}
+
+.swatch.ring-white {
+    box-shadow: inset 0 0 0 2px #f4f7fb;
+}
+
+.swatch.colors {
+    background: linear-gradient(90deg, #f4f6f8, #d7263d, #00a86b, #ffd000, #ff6a00, #1f4bff);
+}
+
 .cube-controls {
     display: flex;
     gap: 12px;
-    justify-content: center;
-    padding: 12px 0 0;
+    margin-top: 16px;
 }
 
 .cube-controls button {
-    font: 600 16px sans-serif;
-    padding: 10px 18px;
+    flex: 1;
+    height: 46px;
     border: 0;
-    border-radius: 999px;
+    border-radius: 16px;
+    font: 650 17px "Avenir Next", "Segoe UI", sans-serif;
     cursor: pointer;
 }
 
 .cube-controls button:disabled {
-    opacity: 0.4;
+    opacity: 0.38;
     cursor: default;
 }
 
 .mix-button {
-    background: #f4f7fb;
-    color: #12141c;
+    background: #f4f1ea;
+    color: #141820;
 }
 
-.done-button {
-    background: #7dffb3;
+.solve-button {
+    background: #8ef0c0;
     color: #06210f;
+}
+
+@media (max-width: 640px) {
+    .cube-board {
+        padding: 16px 14px 14px;
+        border-radius: 0;
+    }
+
+    .cube-title {
+        font-size: 28px;
+    }
+
+    .cube-stage {
+        grid-template-columns: 1fr;
+        height: auto;
+    }
+
+    .cube-canvas-wrap {
+        aspect-ratio: 1 / 1;
+        min-height: 0;
+    }
+
+    .dish-canvas {
+        height: 200px;
+    }
 }
