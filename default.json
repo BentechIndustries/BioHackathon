@@ -1,0 +1,6 @@
+{
+    "name": "Default",
+    "timeout_s": 43200,
+    "duration": 90,
+    "scramble_turns": 6
+}

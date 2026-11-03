@@ -1,0 +1,7 @@
+{
+    "name": "BioHackathon",
+    "version": "0.1.0",
+    "description": "Solves a 2x2x2 cube from CL1 activity.",
+    "author": "Bentech Industries",
+    "config_version": 1
+}
