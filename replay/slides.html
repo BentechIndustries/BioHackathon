@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Neurons Fly Drone</title>
+<style>
+  :root {
+    --bg: #0e1116; --panel: #161b22; --line: #2a313c; --text: #e6ebf1; --muted: #8b95a3;
+    --stim: #f0a030; --spike: #ffe680; --accent: #69db7c; --left: #ff6b6b; --right: #4dabf7; --base: #4a5260;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 18px/1.45 ui-sans-serif, system-ui, sans-serif; overflow: hidden; }
+  .slide { position: absolute; inset: 0; display: none; flex-direction: column; justify-content: center; padding: 6vh 8vw; gap: 3vh; }
+  .slide.on { display: flex; }
+  h1 { font-size: clamp(34px, 6vw, 72px); line-height: 1.05; margin: 0; letter-spacing: -0.02em; }
+  h2 { font-size: clamp(26px, 4vw, 48px); line-height: 1.1; margin: 0; letter-spacing: -0.01em; }
+  .kicker { color: var(--accent); font-weight: 600; text-transform: uppercase; letter-spacing: .08em; font-size: 14px; }
+  .big { font-size: clamp(18px, 2.2vw, 28px); color: var(--muted); max-width: 42ch; margin: 0; }
+  .big b { color: var(--text); font-weight: 600; }
+  em { font-style: normal; color: var(--accent); }
+  .row { display: flex; flex-wrap: wrap; gap: 2.5vw; align-items: center; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px 22px; flex: 1 1 220px; min-width: 0; }
+  .stack .card { flex: none; }
+  .card h3 { margin: 0 0 6px; font-size: 20px; }
+  .card p { margin: 0; color: var(--muted); }
+  .num { font-size: clamp(30px, 4vw, 52px); font-weight: 700; color: var(--accent); line-height: 1; }
+  svg { max-width: 100%; height: auto; display: block; }
+  .note { color: var(--muted); font-size: 14px; }
+  /* chart */
+  .bars { display: grid; grid-template-columns: max-content 1fr max-content; gap: 10px 14px; align-items: center; max-width: 900px; width: 100%; }
+  .bars .lab { text-align: right; color: var(--text); font-size: clamp(14px, 1.6vw, 19px); }
+  .bars .lab small { display: block; color: var(--muted); font-size: 13px; }
+  .bars .track { height: 26px; position: relative; }
+  .bars .bar { height: 100%; border-radius: 0 4px 4px 0; background: var(--base); min-width: 3px; }
+  .bars .bar.n { background: var(--accent); }
+  .bars .val { font-variant-numeric: tabular-nums; color: var(--text); font-size: clamp(14px, 1.6vw, 19px); }
+  .demo-btn { display: inline-block; background: var(--accent); color: #0b2e13; font-weight: 700; font-size: clamp(20px, 2.4vw, 30px); padding: 18px 34px; border-radius: 12px; text-decoration: none; }
+  .demo-btn:focus-visible, button:focus-visible { outline: 3px solid var(--text); outline-offset: 3px; }
+  /* chrome */
+  nav { position: fixed; bottom: 18px; left: 0; right: 0; display: flex; justify-content: center; gap: 8px; }
+  nav button { width: 10px; height: 10px; border-radius: 50%; border: 0; padding: 0; background: var(--line); cursor: pointer; }
+  nav button.on { background: var(--accent); }
+  .hint { position: fixed; bottom: 14px; right: 18px; color: var(--muted); font-size: 12px; }
+  aside.notes { display: none; position: fixed; left: 0; right: 0; bottom: 44px; margin: 0 8vw; background: #000c; border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; color: var(--muted); font-size: 15px; }
+  body.show-notes .slide.on aside.notes { display: block; }
+  @media (max-width: 640px) { .slide { padding: 5vh 16px; } .bars { grid-template-columns: max-content 1fr max-content; gap: 8px; } }
+</style>
+</head>
+<body>
+
+<!-- 1. Hook -->
+<section class="slide on">
+  <div class="kicker">Biocomputing hackathon</div>
+  <h1>Can a dish of neurons<br>fly a drone?</h1>
+  <p class="big">We wired <b>64 simulated neurons</b> into a closed loop with a drone flying through a <b>3D-scanned living room</b>.</p>
+  <aside class="notes">~15 s. Living neurons on a chip (Cortical Labs CL1) can be stimulated and read. We ask: can they steer something in 3D? Today: on the CL SDK simulator, same code runs on the real chip.</aside>
+</section>
+
+<!-- 2. Key idea -->
+<section class="slide">
+  <div class="kicker">The trick</div>
+  <h2>We never train the neurons.<br>We only learn to <em>read</em> them.</h2>
+  <div class="row">
+    <div class="card"><h3>The neurons</h3><p>Left exactly as they are. They mix whatever we send in, nonlinearly and noisily.</p></div>
+    <div class="card"><h3>The readout</h3><p>One small table of weights: spikes in, steering out. Trained in under a second.</p></div>
+  </div>
+  <p class="note">This is called reservoir computing. On real tissue you can't rewire the cells, so this is the approach that transfers.</p>
+  <aside class="notes">~15 s. Key message: the network is a fixed black box. All the learning is in a tiny linear readout on top.</aside>
+</section>
+
+<!-- 3. The loop -->
+<section class="slide">
+  <div class="kicker">How it works · 100 times per second</div>
+  <h2>A closed loop</h2>
+  <svg viewBox="0 0 1000 260" role="img" aria-label="Loop: lidar rays, pulses, neurons, readout, steering, back to the drone">
+    <defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#8b95a3"/></marker></defs>
+    <g font-family="ui-sans-serif, system-ui" text-anchor="middle">
+      <g><rect x="10" y="40" width="170" height="110" rx="12" fill="#161b22" stroke="#2a313c"/>
+        <text x="95" y="85" font-size="22" fill="#e6ebf1" font-weight="600">1. See</text>
+        <text x="95" y="115" font-size="16" fill="#8b95a3">32 lidar rays</text></g>
+      <g><rect x="215" y="40" width="170" height="110" rx="12" fill="#161b22" stroke="#f0a030"/>
+        <text x="300" y="85" font-size="22" fill="#e6ebf1" font-weight="600">2. Pulse</text>
+        <text x="300" y="115" font-size="16" fill="#8b95a3">closer = faster</text></g>
+      <g><rect x="420" y="40" width="170" height="110" rx="12" fill="#161b22" stroke="#ffe680"/>
+        <text x="505" y="85" font-size="22" fill="#e6ebf1" font-weight="600">3. Neurons</text>
+        <text x="505" y="115" font-size="16" fill="#8b95a3">spread &amp; spike</text></g>
+      <g><rect x="625" y="40" width="170" height="110" rx="12" fill="#161b22" stroke="#69db7c"/>
+        <text x="710" y="85" font-size="22" fill="#e6ebf1" font-weight="600">4. Read</text>
+        <text x="710" y="115" font-size="16" fill="#8b95a3">spikes × weights</text></g>
+      <g><rect x="830" y="40" width="160" height="110" rx="12" fill="#161b22" stroke="#2a313c"/>
+        <text x="910" y="85" font-size="22" fill="#e6ebf1" font-weight="600">5. Steer</text>
+        <text x="910" y="115" font-size="16" fill="#8b95a3">turn + climb</text></g>
+      <g stroke="#8b95a3" stroke-width="2.5" fill="none" marker-end="url(#ar)">
+        <path d="M182 95 H211"/><path d="M387 95 H416"/><path d="M592 95 H621"/><path d="M797 95 H826"/>
+        <path d="M910 152 V215 H95 V154"/>
+      </g>
+      <text x="500" y="240" font-size="16" fill="#8b95a3">drone moves → new view → repeat</text>
+    </g>
+  </svg>
+  <aside class="notes">~20 s. Walk the boxes left to right. Distance becomes pulse rate, the same way the DishBrain Pong experiment encoded the ball.</aside>
+</section>
+
+<!-- 4. The dish -->
+<section class="slide">
+  <div class="kicker">The electrode map</div>
+  <h2>The dish sees a panorama</h2>
+  <div class="row" style="align-items:flex-start">
+    <svg viewBox="0 0 340 360" style="flex:0 1 340px" role="img" aria-label="8 by 8 electrode grid: middle four columns receive rays, outer four columns are read">
+      <g font-family="ui-sans-serif, system-ui" font-size="13" text-anchor="middle" fill="#8b95a3">
+        <text x="40" y="18">read</text><text x="80" y="18">read</text>
+        <text x="120" y="18">+15°</text><text x="160" y="18">+45°</text><text x="200" y="18">−45°</text><text x="240" y="18">−15°</text>
+        <text x="280" y="18">read</text><text x="320" y="18">read</text>
+      </g>
+      <g id="grid"></g>
+      <text x="180" y="355" font-family="ui-sans-serif, system-ui" font-size="13" text-anchor="middle" fill="#8b95a3">rows = 8 directions around the drone</text>
+    </svg>
+    <div class="stack" style="flex:1 1 300px; display:flex; flex-direction:column; gap:14px">
+      <div class="card"><h3 style="color:var(--stim)">Middle 32 electrodes: input</h3><p>One per lidar ray. Each column is a tilt (up to down), each row a direction.</p></div>
+      <div class="card"><h3 style="color:var(--accent)">Outer 27 electrodes: output</h3><p>Never stimulated. Any steering signal here had to travel through the network.</p></div>
+    </div>
+  </div>
+  <aside class="notes">~20 s. Crossed-out corners are dead electrodes on the real chip. The fair test is the outer ring: no direct input reaches it.</aside>
+</section>
+
+<!-- 5. Training -->
+<section class="slide">
+  <div class="kicker">Training</div>
+  <h2>Watch an expert, then take over</h2>
+  <div class="row">
+    <div class="card"><div class="num">3 min</div><h3>Expert flies</h3><p>A simple rule pilots the drone while we record every spike.</p></div>
+    <div class="card"><div class="num">&lt; 1 s</div><h3>Fit the readout</h3><p>Linear regression: which spikes predict which steering?</p></div>
+    <div class="card"><div class="num">90 s</div><h3>Neurons fly</h3><p>Expert switched off. Only the network's spikes steer.</p></div>
+  </div>
+  <aside class="notes">~15 s. The readout is one matrix multiply per tick, cheap enough to run on the CL1's own loop.</aside>
+</section>
+
+<!-- 6. Results -->
+<section class="slide">
+  <div class="kicker">Results · crashes per minute, lower is better</div>
+  <h2>The network flies better than the raw sensor</h2>
+  <div class="bars" id="bars" role="table" aria-label="Crashes per minute by controller"></div>
+  <p class="note">One simulated run (LIF network, seed 42). Steering prediction: all neurons R² 0.64 vs raw lidar 0.40, because the neurons add the nonlinearity a linear readout lacks.</p>
+  <aside class="notes">~20 s. Two points: all neurons beat raw lidar on steering, the reservoir effect. The outer ring alone is weak but still 2.5× better than a fixed command. Simulator, not tissue: next step is the CL1.</aside>
+</section>
+
+<!-- 7. Demo -->
+<section class="slide" style="align-items:flex-start">
+  <div class="kicker">Demo</div>
+  <h2>Watch it fly</h2>
+  <p class="big">Left: the drone and its rays in the scanned room. Right: the dish, lit by every pulse and spike. Try <b>Bird's-eye</b> and <b>POV</b>.</p>
+  <a class="demo-btn" href="index.html">Open the live replay →</a>
+  <aside class="notes">~15 s, then switch to the replay. Jump to "fly: neurons: all live" and toggle POV.</aside>
+</section>
+
+<nav id="dots" aria-label="Slides"></nav>
+<div class="hint">← → to move · N for notes · D for demo</div>
+
+<script>
+// electrode grid on slide 4 (channel = 8*col + row; dead: 0, 4, 7, 56, 63)
+const dead = new Set([0, 4, 7, 56, 63]), grid = document.getElementById('grid');
+for (let c = 0; c < 8; c++) for (let r = 0; r < 8; r++) {
+  const x = 40 + c * 40, y = 50 + r * 37, ch = 8 * c + r, input = c >= 2 && c <= 5;
+  grid.insertAdjacentHTML('beforeend', dead.has(ch)
+    ? `<path d="M${x - 7} ${y - 7} L${x + 7} ${y + 7} M${x + 7} ${y - 7} L${x - 7} ${y + 7}" stroke="#2a313c" stroke-width="2"/>`
+    : `<circle cx="${x}" cy="${y}" r="14" fill="${input ? '#3a2a10' : '#12301a'}" stroke="${input ? '#f0a030' : '#69db7c'}" stroke-width="2"/>`);
+}
+// results bars (one series: neuron controllers highlighted, baselines grey)
+const results = [
+  ['Random steering', 'baseline', 15.3, 0], ['Constant command', 'baseline', 13.3, 0],
+  ['Neurons: outer ring only', '27 unstimulated electrodes', 5.3, 1], ['Raw lidar readout', 'no neurons', 1.3, 0],
+  ['Neurons: all electrodes', '59 electrodes', 0.7, 1], ['Expert pilot', 'the teacher', 0, 0],
+];
+const max = 16, bars = document.getElementById('bars');
+for (const [name, sub, v, n] of results)
+  bars.insertAdjacentHTML('beforeend', `<div class="lab" role="rowheader">${name}<small>${sub}</small></div>
+    <div class="track" title="${name}: ${v} crashes/min"><div class="bar${n ? ' n' : ''}" style="width:${v / max * 100}%"></div></div>
+    <div class="val" role="cell">${v}</div>`);
+
+// navigation
+const slides = [...document.querySelectorAll('.slide')], dots = document.getElementById('dots');
+let cur = 0;
+slides.forEach((_, k) => { const b = document.createElement('button'); b.setAttribute('aria-label', `Slide ${k + 1}`); b.onclick = () => go(k); dots.append(b); });
+function go(k) {
+  cur = Math.max(0, Math.min(slides.length - 1, k));
+  slides.forEach((s, j) => s.classList.toggle('on', j === cur));
+  [...dots.children].forEach((d, j) => d.classList.toggle('on', j === cur));
+  history.replaceState(null, '', `#${cur + 1}`);
+}
+addEventListener('keydown', e => {
+  if (['ArrowRight', 'PageDown', ' ', 'Enter'].includes(e.key)) { e.preventDefault(); go(cur + 1); }
+  else if (['ArrowLeft', 'PageUp', 'Backspace'].includes(e.key)) { e.preventDefault(); go(cur - 1); }
+  else if (e.key === 'n' || e.key === 'N') document.body.classList.toggle('show-notes');
+  else if (e.key === 'd' || e.key === 'D') location.href = 'index.html';
+  else if (e.key === 'Home') go(0); else if (e.key === 'End') go(slides.length - 1);
+});
+addEventListener('click', e => { if (!e.target.closest('a, button')) go(cur + (e.clientX > innerWidth / 3 ? 1 : -1)); });
+go((parseInt(location.hash.slice(1)) || 1) - 1);
+</script>
+</body>
+</html>
